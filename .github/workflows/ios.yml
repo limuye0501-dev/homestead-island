@@ -5,10 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      runner: { description: "runner label", default: "macos-15-intel" }
 
 jobs:
   build-simulator:
-    runs-on: macos-latest
+    runs-on: ${{ github.event.inputs.runner || 'macos-15-intel' }}
     steps:
       - uses: actions/checkout@v5
       - name: Install XcodeGen
@@ -22,7 +24,7 @@ jobs:
             -project HomesteadIsland.xcodeproj \
             -scheme HomesteadIsland \
             -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO | tail -n 80
       - name: Run in simulator & screenshot
