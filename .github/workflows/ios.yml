@@ -1,9 +1,7 @@
 name: iOS CI
 
+# CI moved to Codemagic (codemagic.yaml); GitHub macOS runners never get assigned.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
     inputs:
       runner: { description: "runner label", default: "macos-15-intel" }

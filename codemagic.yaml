@@ -1,0 +1,81 @@
+workflows:
+  ios-sim:
+    name: iOS Simulator build + screenshots
+    instance_type: mac_mini_m2
+    max_build_duration: 45
+    environment:
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+      cancel_previous_builds: true
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+      - name: Generate Xcode project
+        script: xcodegen generate
+      - name: Build for iOS Simulator (no signing)
+        script: |
+          set -o pipefail
+          mkdir -p logs
+          xcodebuild build \
+            -project HomesteadIsland.xcodeproj \
+            -scheme HomesteadIsland \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
+            > logs/xcodebuild.log 2>&1 || { tail -n 120 logs/xcodebuild.log; exit 1; }
+          tail -n 40 logs/xcodebuild.log
+      - name: Run in simulator & screenshot
+        script: |
+          set -x
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print([x['udid'] for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name'] and 'Pro Max' in x['name']][-1])")
+          echo "$UDID" > logs/udid.txt
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP=$(find build/Build/Products -name "HomesteadIsland.app" -path "*iphonesimulator*" | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 || true
+          mkdir -p screens
+          BID=com.limuye.homesteadisland
+          shot () { NAME=$1; shift; xcrun simctl terminate "$UDID" $BID || true; xcrun simctl launch "$UDID" $BID "$@"; sleep 10; xcrun simctl io "$UDID" screenshot screens/$NAME.png; }
+          shot day -hour 11 -weather clear
+          shot sunset -hour 18.2 -weather clear
+          shot night -hour 22.5 -weather clear
+          shot rain -hour 15 -weather rain
+          shot cloudy -hour 10 -weather cloudy
+          shot res-270 -hour 11 -res 270 -nohud
+          shot res-540 -hour 11 -res 540 -nohud
+          shot res-1080 -hour 11 -res 1080 -nohud
+          shot night-1080 -hour 22.5 -res 1080 -nohud
+          shot edit -hour 17 -edit
+          shot nopost -hour 11 -nopost -nohud
+      - name: Record tour video
+        ignore_failure: true
+        script: |
+          UDID=$(cat logs/udid.txt)
+          mkdir -p video
+          xcrun simctl terminate "$UDID" com.limuye.homesteadisland || true
+          xcrun simctl launch "$UDID" com.limuye.homesteadisland -tour -hour 9 -res 540
+          sleep 3
+          xcrun simctl io "$UDID" recordVideo --codec=h264 --force video/tour.mp4 &
+          REC=$!
+          sleep 40
+          kill -INT $REC
+          wait $REC || true
+      - name: Collect crash reports
+        ignore_failure: true
+        script: |
+          mkdir -p crashes
+          find ~/Library/Logs/DiagnosticReports -name "*omestead*" 2>/dev/null | head -3 | while read f; do cp "$f" crashes/; head -c 6000 "$f"; done || true
+          xcrun simctl spawn "$(cat logs/udid.txt)" log show --last 5m --predicate 'process == "HomesteadIsland"' > logs/app-sim.log 2>/dev/null || true
+    artifacts:
+      - screens/*.png
+      - video/*.mp4
+      - logs/*
+      - crashes/*
+      - /tmp/xcodebuild_logs/*.log
