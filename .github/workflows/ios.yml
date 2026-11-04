@@ -1,0 +1,79 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-simulator:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build for iOS Simulator (no signing)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project HomesteadIsland.xcodeproj \
+            -scheme HomesteadIsland \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO | tail -n 80
+      - name: Run in simulator & screenshot
+        timeout-minutes: 15
+        run: |
+          set -x
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print([x['udid'] for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name'] and 'Pro Max' in x['name']][-1])")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          APP=$(find build/Build/Products -name "HomesteadIsland.app" -path "*iphonesimulator*" | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 || true
+          mkdir -p screens
+          BID=com.limuye.homesteadisland
+          shot () { NAME=$1; shift; xcrun simctl terminate "$UDID" $BID || true; xcrun simctl launch "$UDID" $BID "$@"; sleep 10; xcrun simctl io "$UDID" screenshot screens/$NAME.png; }
+          shot day -hour 11 -weather clear
+          shot sunset -hour 18.2 -weather clear
+          shot night -hour 22.5 -weather clear
+          shot rain -hour 15 -weather rain
+          shot cloudy -hour 10 -weather cloudy
+          shot res-270 -hour 11 -res 270 -nohud
+          shot res-540 -hour 11 -res 540 -nohud
+          shot res-1080 -hour 11 -res 1080 -nohud
+          shot night-1080 -hour 22.5 -res 1080 -nohud
+          shot edit -hour 17 -edit
+          shot nopost -hour 11 -nopost -nohud
+      - name: Record video
+        timeout-minutes: 5
+        continue-on-error: true
+        run: |
+          UDID=$(xcrun simctl list devices booted -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print([x['udid'] for v in d.values() for x in v][0])")
+          mkdir -p video
+          xcrun simctl terminate "$UDID" com.limuye.homesteadisland || true
+          xcrun simctl launch "$UDID" com.limuye.homesteadisland -tour -hour 9 -res 540
+          sleep 3
+          xcrun simctl io "$UDID" recordVideo --codec=h264 --force video/tour.mov &
+          REC=$!
+          sleep 40
+          kill -INT $REC
+          wait $REC || true
+      - name: Crash reports
+        if: always()
+        run: |
+          mkdir -p crashes
+          find ~/Library/Logs/DiagnosticReports -name "*omestead*" 2>/dev/null | head -3 | while read f; do cp "$f" crashes/; head -c 6000 "$f"; done || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: simulator-screenshots, path: screens/ }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: tour-video, path: video/ }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: crash-reports, path: crashes/ }
