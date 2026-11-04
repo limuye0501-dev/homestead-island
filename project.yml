@@ -1,0 +1,40 @@
+name: HomesteadIsland
+options:
+  bundleIdPrefix: com.limuye
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: zh-Hans
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  HomesteadIsland:
+    type: application
+    platform: iOS
+    sources:
+      - App/Sources
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: 浮岛小家
+        CFBundleDevelopmentRegion: zh-Hans
+        UILaunchScreen: {}
+        UIRequiredDeviceCapabilities: [metal]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.limuye.homesteadisland
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: D53V28KTGW
+schemes:
+  HomesteadIsland:
+    build:
+      targets:
+        HomesteadIsland: all
+    run:
+      config: Debug
